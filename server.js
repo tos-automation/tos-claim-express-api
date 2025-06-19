@@ -2,7 +2,6 @@ const express = require("express");
 const multer = require("multer");
 const fs = require("fs/promises");
 const path = require("path");
-const pdfToPng = require('pdf-to-png-converter');
 const sharp = require("sharp");
 const mammoth = require("mammoth");
 const OpenAI = require("openai");
@@ -23,7 +22,8 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     let images = [];
 
     if (fileType === ".pdf") {
-      images = await pdfToPng.default.fromPath(file.path, {
+      const { fromPath } = await import("pdf-to-png-converter");
+      images = await fromPath(file.path, {
         outputType: "png",
         responseType: "base64",
       });
@@ -36,12 +36,10 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
 
       const combined = aggregateExtractedData(results);
       return res.json({ extracted: combined });
-
     } else if (fileType === ".docx") {
       const result = await mammoth.extractRawText({ path: file.path });
       const gptResponse = await analyzeTextWithGPT(result.value);
       return res.json({ extracted: gptResponse });
-
     } else if ([".jpg", ".jpeg", ".png"].includes(fileType)) {
       const imageBuffer = await fs.readFile(file.path);
       const pngBuffer = await sharp(imageBuffer).png().toBuffer();
@@ -49,7 +47,6 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
 
       const gptResult = await analyzeImageWithGPT(base64);
       return res.json({ extracted: gptResult });
-
     } else {
       return res.status(400).json({ error: "Unsupported file type" });
     }
@@ -132,4 +129,6 @@ function aggregateExtractedData(results) {
 }
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`🚀 Express server running on port ${PORT}`));
+app.listen(PORT, () =>
+  console.log(`🚀 Express server running on port ${PORT}`)
+);
