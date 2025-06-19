@@ -22,22 +22,21 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     let images = [];
 
     if (fileType === ".pdf") {
-    const convertPdfToPng = await import('pdf-to-png-converter'); // Assign the default export directly
-  images = await convertPdfToPng(file.path, {
-    outputType: "png",
-    responseType: "base64",
-  });
+      const { fromPath } = await import("pdf-to-png-converter");
+      images = await fromPath(file.path, {
+        outputType: "png",
+        responseType: "base64",
+      });
 
-  const results = [];
-  for (const page of images) {
-    const gptResult = await analyzeImageWithGPT(page.content);
-    results.push(gptResult);
-  }
+      const results = [];
+      for (const page of images) {
+        const gptResult = await analyzeImageWithGPT(page.content);
+        results.push(gptResult);
+      }
 
-  const combined = aggregateExtractedData(results);
-  return res.json({ extracted: combined });
-}
- else if (fileType === ".docx") {
+      const combined = aggregateExtractedData(results);
+      return res.json({ extracted: combined });
+    } else if (fileType === ".docx") {
       const result = await mammoth.extractRawText({ path: file.path });
       const gptResponse = await analyzeTextWithGPT(result.value);
       return res.json({ extracted: gptResponse });
