@@ -22,11 +22,11 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     let images = [];
 
     if (fileType === ".pdf") {
-  const { fromPath } = await import('pdf-to-png-converter');
-  images = await fromPath(file.path, {
-    outputType: "png",
-    responseType: "base64",
-  });
+    const convertPdfToPng = await import('pdf-to-png-converter'); // Assign the default export directly
+  images = await convertPdfToPng(file.path, {
+    outputType: "png",
+    responseType: "base64",
+  });
 
   const results = [];
   for (const page of images) {
