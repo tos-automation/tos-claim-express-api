@@ -5,6 +5,7 @@ const path = require("path");
 const sharp = require("sharp");
 const mammoth = require("mammoth");
 const OpenAI = require("openai");
+const { fromPath } = require("pdf-to-png-converter");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
@@ -22,7 +23,6 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     let images = [];
 
     if (fileType === ".pdf") {
-      const { fromPath } = await import("pdf-to-png-converter");
       images = await fromPath(file.path, {
         outputType: "png",
         responseType: "base64",

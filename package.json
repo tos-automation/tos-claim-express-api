@@ -10,11 +10,13 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "canvas": "^3.1.1",
     "express": "^5.1.0",
     "mammoth": "^1.9.1",
     "multer": "^2.0.1",
     "openai": "^5.5.1",
     "pdf-to-png-converter": "^3.6.5",
+    "pdfjs-dist": "^5.1.91",
     "sharp": "^0.34.2"
   }
 }
