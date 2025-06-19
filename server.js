@@ -23,7 +23,7 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     let images = [];
 
     if (fileType === ".pdf") {
-      images = await pdfToPng.fromPath(file.path, {
+      images = await pdfToPng.default.fromPath(file.path, {
         outputType: "png",
         responseType: "base64",
       });
