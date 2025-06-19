@@ -1,16 +1,20 @@
-// server.js
-import express from "express";
-import multer from "multer";
-import fs from "fs/promises";
-import path from "path";
-import { fromPath } from "pdf-to-png-converter";
-import sharp from "sharp";
-import mammoth from "mammoth";
-import OpenAI from "openai";
+const express = require("express");
+const multer = require("multer");
+const fs = require("fs/promises");
+const path = require("path");
+const { fromPath } = require("pdf-to-png-converter");
+const sharp = require("sharp");
+const mammoth = require("mammoth");
+const OpenAI = require("openai");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Health check route
+app.get("/status", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
 
 app.post("/analyze", upload.single("file"), async (req, res) => {
   try {
@@ -19,7 +23,6 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     let images = [];
 
     if (fileType === ".pdf") {
-      // Convert all pages of PDF to images
       images = await fromPath(file.path, {
         outputType: "png",
         responseType: "base64",
@@ -27,7 +30,7 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
 
       const results = [];
       for (const page of images) {
-        const gptResult = await analyzeImageWithGPT(page.content); // base64
+        const gptResult = await analyzeImageWithGPT(page.content);
         results.push(gptResult);
       }
 
@@ -35,13 +38,11 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
       return res.json({ extracted: combined });
 
     } else if (fileType === ".docx") {
-      // Extract text from DOCX and analyze
       const result = await mammoth.extractRawText({ path: file.path });
       const gptResponse = await analyzeTextWithGPT(result.value);
       return res.json({ extracted: gptResponse });
 
     } else if ([".jpg", ".jpeg", ".png"].includes(fileType)) {
-      // Process image directly
       const imageBuffer = await fs.readFile(file.path);
       const pngBuffer = await sharp(imageBuffer).png().toBuffer();
       const base64 = pngBuffer.toString("base64");
@@ -52,14 +53,12 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     } else {
       return res.status(400).json({ error: "Unsupported file type" });
     }
-
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error in /analyze:", err);
     res.status(500).json({ error: "Processing failed" });
   }
 });
 
-// 🔍 Analyze image with GPT-4o
 async function analyzeImageWithGPT(base64Image) {
   const result = await openai.chat.completions.create({
     model: "gpt-4o",
@@ -99,7 +98,6 @@ Return the data in JSON format only.`,
   }
 }
 
-// 📝 Analyze DOCX text with GPT-4o
 async function analyzeTextWithGPT(text) {
   const result = await openai.chat.completions.create({
     model: "gpt-4o",
@@ -119,10 +117,8 @@ async function analyzeTextWithGPT(text) {
   }
 }
 
-// 🔁 Combine/merge GPT results from multiple pages
 function aggregateExtractedData(results) {
   const merged = {};
-
   for (const result of results) {
     for (const key in result) {
       if (!merged[key]) {
@@ -132,10 +128,8 @@ function aggregateExtractedData(results) {
       }
     }
   }
-
   return merged;
 }
 
-// 🚀 Start server
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Express server running on port ${PORT}`));
