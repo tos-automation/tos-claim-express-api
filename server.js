@@ -47,12 +47,12 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
       // Now call the PDF to PNG endpoint with uploaded URL
       const { data } = await axios.post(
         "https://api.pdf.co/v1/pdf/convert/to/png",
-        {
-          url: uploadedUrl, // ✅ use 'url' instead of 'file'
+        JSON.stringify({
+          url: uploadedUrl,
           name: file.originalname,
           async: false,
           pages: "0-",
-        },
+        }),
         {
           headers: {
             "x-api-key": PDFCO_API_KEY,
