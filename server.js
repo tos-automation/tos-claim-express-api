@@ -6,6 +6,12 @@ const sharp = require("sharp");
 const mammoth = require("mammoth");
 const OpenAI = require("openai");
 const axios = require("axios");
+const { createClient } = require("@supabase/supabase-js");
+
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
@@ -23,18 +29,16 @@ app.get("/status", (req, res) => {
 app.post("/analyze", upload.single("file"), async (req, res) => {
   const file = req.file;
   const fileType = path.extname(file.originalname).toLowerCase();
+  const documentId = req.body.documentId;
 
   try {
+    let combined;
+
     if (fileType === ".pdf") {
-      // Step 1: Get presigned URL from PDF.co
       const presignRes = await axios.get(
-        `https://api.pdf.co/v1/file/upload/get-presigned-url?contenttype=application/octet-stream&name=${encodeURIComponent(
-          path.basename(file.originalname)
-        )}`,
+        `https://api.pdf.co/v1/file/upload/get-presigned-url?contenttype=application/octet-stream&name=${encodeURIComponent(path.basename(file.originalname))}`,
         {
-          headers: {
-            "x-api-key": PDFCO_API_KEY,
-          },
+          headers: { "x-api-key": PDFCO_API_KEY },
         }
       );
 
@@ -45,13 +49,11 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
         throw new Error("Failed to get presigned URL from PDF.co");
       }
 
-      // Step 2: Upload PDF file using PUT
       const fileStream = await fs.readFile(file.path);
       await axios.put(uploadUrl, fileStream, {
         headers: { "Content-Type": "application/octet-stream" },
       });
 
-      // Step 3: Call PDF to PNG conversion
       const { data } = await axios.post(
         "https://api.pdf.co/v1/pdf/convert/to/png",
         {
@@ -85,26 +87,37 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
         results.push(gptResult);
       }
 
-      const combined = aggregateExtractedData(results);
-      return res.json({ extracted: combined });
+      combined = aggregateExtractedData(results);
     }
 
     if (fileType === ".docx") {
       const result = await mammoth.extractRawText({ path: file.path });
-      const gptResponse = await analyzeTextWithGPT(result.value);
-      return res.json({ extracted: gptResponse });
+      combined = await analyzeTextWithGPT(result.value);
     }
 
     if ([".jpg", ".jpeg", ".png"].includes(fileType)) {
       const imageBuffer = await fs.readFile(file.path);
       const pngBuffer = await sharp(imageBuffer).png().toBuffer();
       const base64 = pngBuffer.toString("base64");
-
-      const gptResult = await analyzeImageWithGPT(base64);
-      return res.json({ extracted: gptResult });
+      combined = await analyzeImageWithGPT(base64);
     }
 
-    return res.status(400).json({ error: "Unsupported file type" });
+    if (!combined) {
+      return res.status(400).json({ error: "Unsupported file type" });
+    }
+
+    if (documentId) {
+      await supabase
+        .from("documents")
+        .update({
+          extracted_data: combined,
+          analysis_status: "complete",
+          analyzed_at: new Date().toISOString(),
+        })
+        .eq("id", documentId);
+    }
+
+    return res.json({ extracted: combined });
   } catch (err) {
     console.error("❌ Error in /analyze:", err.response?.data || err);
     res.status(500).json({ error: "Processing failed" });
@@ -112,6 +125,7 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     if (file) await fs.unlink(file.path);
   }
 });
+
 
 async function analyzeImageWithGPT(base64Image) {
   const result = await openai.chat.completions.create({
