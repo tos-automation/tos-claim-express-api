@@ -11,7 +11,9 @@ const app = express();
 const upload = multer({ dest: "uploads/" });
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const PDFCO_API_KEY = process.env.PDFCO_API_KEY || "mark.neil.u.cordero@gmail.com_aPtqQULO5OcnapLI3yTCKximITDXIEFNoFNSyev0blNUhMAsoS874RTu0fy9QmVz";
+const PDFCO_API_KEY =
+  process.env.PDFCO_API_KEY ||
+  "mark.neil.u.cordero@gmail.com_aPtqQULO5OcnapLI3yTCKximITDXIEFNoFNSyev0blNUhMAsoS874RTu0fy9QmVz";
 
 // Health check
 app.get("/status", (req, res) => {
@@ -24,14 +26,29 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
 
   try {
     if (fileType === ".pdf") {
-      const fileBuffer = await fs.readFile(file.path);
-      const base64File = fileBuffer.toString("base64");
+      // Upload file to PDF.co first
+      const fileStream = await fs.readFile(file.path);
+      const uploadRes = await axios.post(
+        "https://api.pdf.co/v1/file/upload",
+        fileStream,
+        {
+          headers: {
+            "x-api-key": PDFCO_API_KEY,
+            "Content-Type": "application/octet-stream",
+          },
+        }
+      );
 
-      // ✅ PDF.co PDF to PNG API
+      const uploadedUrl = uploadRes.data.url;
+      if (!uploadedUrl) {
+        throw new Error("Failed to upload file to PDF.co");
+      }
+
+      // Now call the PDF to PNG endpoint with uploaded URL
       const { data } = await axios.post(
         "https://api.pdf.co/v1/pdf/convert/to/png",
         {
-          file: base64File,
+          url: uploadedUrl, // ✅ use 'url' instead of 'file'
           name: file.originalname,
           async: false,
           pages: "0-",
