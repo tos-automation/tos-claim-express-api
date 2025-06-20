@@ -5,54 +5,87 @@ const path = require("path");
 const sharp = require("sharp");
 const mammoth = require("mammoth");
 const OpenAI = require("openai");
-const pdfToPng = require("pdf-to-png-converter"); // ✅ Correct import
+const axios = require("axios");
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-// Health check route
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const PDFCO_API_KEY = process.env.PDFCO_API_KEY || "mark.neil.u.cordero@gmail.com_aPtqQULO5OcnapLI3yTCKximITDXIEFNoFNSyev0blNUhMAsoS874RTu0fy9QmVz";
+
+// Health check
 app.get("/status", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 app.post("/analyze", upload.single("file"), async (req, res) => {
-  try {
-    const file = req.file;
-    const fileType = path.extname(file.originalname).toLowerCase();
-    let images = [];
+  const file = req.file;
+  const fileType = path.extname(file.originalname).toLowerCase();
 
+  try {
     if (fileType === ".pdf") {
-      images = await pdfToPng.fromPath(file.path, {
-        outputType: "png",
-        responseType: "base64",
-      });
+      const fileBuffer = await fs.readFile(file.path);
+      const base64File = fileBuffer.toString("base64");
+
+      // ✅ PDF.co PDF to PNG API
+      const { data } = await axios.post(
+        "https://api.pdf.co/v1/pdf/convert/to/png",
+        {
+          file: base64File,
+          name: file.originalname,
+          async: false,
+          pages: "0-",
+        },
+        {
+          headers: {
+            "x-api-key": PDFCO_API_KEY,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!data?.urls?.length) {
+        return res.status(500).json({ error: "PDF.co conversion failed." });
+      }
+
+      const base64Images = await Promise.all(
+        data.urls.map(async (url) => {
+          const imgRes = await axios.get(url, { responseType: "arraybuffer" });
+          return Buffer.from(imgRes.data).toString("base64");
+        })
+      );
 
       const results = [];
-      for (const page of images) {
-        const gptResult = await analyzeImageWithGPT(page.content);
+      for (const base64 of base64Images) {
+        const gptResult = await analyzeImageWithGPT(base64);
         results.push(gptResult);
       }
 
       const combined = aggregateExtractedData(results);
       return res.json({ extracted: combined });
-    } else if (fileType === ".docx") {
+    }
+
+    if (fileType === ".docx") {
       const result = await mammoth.extractRawText({ path: file.path });
       const gptResponse = await analyzeTextWithGPT(result.value);
       return res.json({ extracted: gptResponse });
-    } else if ([".jpg", ".jpeg", ".png"].includes(fileType)) {
+    }
+
+    if ([".jpg", ".jpeg", ".png"].includes(fileType)) {
       const imageBuffer = await fs.readFile(file.path);
       const pngBuffer = await sharp(imageBuffer).png().toBuffer();
       const base64 = pngBuffer.toString("base64");
 
       const gptResult = await analyzeImageWithGPT(base64);
       return res.json({ extracted: gptResult });
-    } else {
-      return res.status(400).json({ error: "Unsupported file type" });
     }
+
+    return res.status(400).json({ error: "Unsupported file type" });
   } catch (err) {
-    console.error("❌ Error in /analyze:", err);
+    console.error("❌ Error in /analyze:", err.response?.data || err);
     res.status(500).json({ error: "Processing failed" });
+  } finally {
+    if (file) await fs.unlink(file.path);
   }
 });
 
