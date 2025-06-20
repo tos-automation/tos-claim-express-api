@@ -26,33 +26,40 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
 
   try {
     if (fileType === ".pdf") {
-      // Upload file to PDF.co first
-      const fileStream = await fs.readFile(file.path);
-      const uploadRes = await axios.post(
-        "https://api.pdf.co/v1/file/upload",
-        fileStream,
+      // Step 1: Get presigned URL from PDF.co
+      const presignRes = await axios.get(
+        `https://api.pdf.co/v1/file/upload/get-presigned-url?contenttype=application/octet-stream&name=${encodeURIComponent(
+          path.basename(file.originalname)
+        )}`,
         {
           headers: {
             "x-api-key": PDFCO_API_KEY,
-            "Content-Type": "application/octet-stream",
           },
         }
       );
 
-      const uploadedUrl = uploadRes.data.url;
-      if (!uploadedUrl) {
-        throw new Error("Failed to upload file to PDF.co");
+      const uploadUrl = presignRes.data.presignedUrl;
+      const uploadedUrl = presignRes.data.url;
+
+      if (!uploadUrl || !uploadedUrl) {
+        throw new Error("Failed to get presigned URL from PDF.co");
       }
 
-      // Now call the PDF to PNG endpoint with uploaded URL
+      // Step 2: Upload PDF file using PUT
+      const fileStream = await fs.readFile(file.path);
+      await axios.put(uploadUrl, fileStream, {
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+
+      // Step 3: Call PDF to PNG conversion
       const { data } = await axios.post(
         "https://api.pdf.co/v1/pdf/convert/to/png",
-        JSON.stringify({
+        {
           url: uploadedUrl,
           name: file.originalname,
           async: false,
           pages: "0-",
-        }),
+        },
         {
           headers: {
             "x-api-key": PDFCO_API_KEY,
