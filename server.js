@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const multer = require("multer");
 const fs = require("fs/promises");
@@ -35,52 +36,84 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     let combined;
 
     if (fileType === ".pdf") {
-      const presignRes = await axios.get(
-        `https://api.pdf.co/v1/file/upload/get-presigned-url?contenttype=application/octet-stream&name=${encodeURIComponent(path.basename(file.originalname))}`,
-        {
-          headers: { "x-api-key": PDFCO_API_KEY },
+      // 🧠 Check cache first
+      const existingImages = await checkIfImagesExist(documentId);
+
+      let base64Images = [];
+
+      if (existingImages) {
+        console.log("⚡️ Using cached images from Supabase...");
+        for (const img of existingImages) {
+          const { data: download, error } = await supabase.storage
+            .from("documents")
+            .download(img.image_path);
+
+          if (download) {
+            const buffer = await download.arrayBuffer();
+            base64Images.push(Buffer.from(buffer).toString("base64"));
+          }
         }
-      );
+      } else {
+        // 🔁 Fallback to PDF.co
+        const presignRes = await axios.get(
+          `https://api.pdf.co/v1/file/upload/get-presigned-url?contenttype=application/octet-stream&name=${encodeURIComponent(
+            path.basename(file.originalname)
+          )}`,
+          { headers: { "x-api-key": PDFCO_API_KEY } }
+        );
 
-      const uploadUrl = presignRes.data.presignedUrl;
-      const uploadedUrl = presignRes.data.url;
+        const uploadUrl = presignRes.data.presignedUrl;
+        const uploadedUrl = presignRes.data.url;
 
-      if (!uploadUrl || !uploadedUrl) {
-        throw new Error("Failed to get presigned URL from PDF.co");
-      }
+        const fileStream = await fs.readFile(file.path);
+        await axios.put(uploadUrl, fileStream, {
+          headers: { "Content-Type": "application/octet-stream" },
+        });
 
-      const fileStream = await fs.readFile(file.path);
-      await axios.put(uploadUrl, fileStream, {
-        headers: { "Content-Type": "application/octet-stream" },
-      });
-
-      const { data } = await axios.post(
-        "https://api.pdf.co/v1/pdf/convert/to/png",
-        {
-          url: uploadedUrl,
-          name: file.originalname,
-          async: false,
-          pages: "0-",
-        },
-        {
-          headers: {
-            "x-api-key": PDFCO_API_KEY,
-            "Content-Type": "application/json",
+        const { data } = await axios.post(
+          "https://api.pdf.co/v1/pdf/convert/to/png",
+          {
+            url: uploadedUrl,
+            name: file.originalname,
+            async: false,
+            pages: "0-",
           },
-        }
-      );
+          {
+            headers: {
+              "x-api-key": PDFCO_API_KEY,
+              "Content-Type": "application/json",
+            },
+          }
+        );
 
-      if (!data?.urls?.length) {
-        return res.status(500).json({ error: "PDF.co conversion failed." });
+        if (!data?.urls?.length) {
+          return res.status(500).json({ error: "PDF.co conversion failed." });
+        }
+
+        for (let i = 0; i < data.urls.length; i++) {
+          const url = data.urls[i];
+          const imgRes = await axios.get(url, { responseType: "arraybuffer" });
+          const buffer = Buffer.from(imgRes.data);
+          const filePath = `converted-images/${documentId}/page-${i + 1}.png`;
+
+          // 💾 Upload to Supabase Storage
+          await supabase.storage.from("documents").upload(filePath, buffer, {
+            contentType: "image/png",
+            upsert: true,
+          });
+
+          // 📝 Save record in `converted_images` table
+          await supabase.from("converted_images").insert({
+            document_id: documentId,
+            image_path: filePath,
+            page_number: i + 1,
+          });
+
+          base64Images.push(buffer.toString("base64"));
+        }
       }
 
-      const base64Images = await Promise.all(
-        data.urls.map(async (url) => {
-          const imgRes = await axios.get(url, { responseType: "arraybuffer" });
-          return Buffer.from(imgRes.data).toString("base64");
-        })
-      );
-
+      // ✨ Analyze with GPT
       const results = [];
       for (const base64 of base64Images) {
         const gptResult = await analyzeImageWithGPT(base64);
@@ -125,7 +158,6 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     if (file) await fs.unlink(file.path);
   }
 });
-
 
 async function analyzeImageWithGPT(base64Image) {
   const result = await openai.chat.completions.create({
@@ -183,6 +215,15 @@ async function analyzeTextWithGPT(text) {
   } catch {
     return { raw_text: content };
   }
+}
+
+async function checkIfImagesExist(documentId) {
+  const { data, error } = await supabase
+    .from("converted_images")
+    .select("*")
+    .eq("document_id", documentId);
+
+  return data && data.length > 0 ? data : null;
 }
 
 function aggregateExtractedData(results) {
