@@ -8,6 +8,7 @@ const mammoth = require("mammoth");
 const OpenAI = require("openai");
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
+const { createReport } = require('docx-templates');
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -239,6 +240,58 @@ function aggregateExtractedData(results) {
   }
   return merged;
 }
+app.post("/generate-demand-letter", express.json(), async (req, res) => {
+  const { extractedData } = req.body;
+
+  if (!extractedData || typeof extractedData !== 'object') {
+    return res.status(400).json({ error: "Missing extracted data" });
+  }
+
+  const {
+    claimantInfo,
+    accidentDetails,
+    medicalProviders,
+    medicalExpenses,
+  } = extractedData;
+
+  const totalBillAmount = medicalExpenses?.reduce(
+    (sum, item) => sum + (item.amount || 0),
+    0
+  ) || 0;
+
+  const replacements = {
+    "«current_date_long»": new Date().toLocaleDateString('en-US', {
+      month: 'long',
+      day: 'numeric',
+      year: 'numeric',
+    }),
+    "«Plaintiff_full_name»": claimantInfo?.name || '',
+    "«Defendant_Insurance_Co_insured»": accidentDetails?.insuredName || '',
+    "«Clinic_company_sk»": medicalProviders?.[0] || '',
+    "«Defendant_Insurance_Co_claim_number»": accidentDetails?.claimNumber || '',
+    "«matter_number»": accidentDetails?.matterNumber || '',
+    "«Defendant_Insurance_Co_company_sk»": accidentDetails?.insuranceCompany || '',
+    "_____": accidentDetails?.serviceDateRange || '',
+    "$0": `$${totalBillAmount.toFixed(2)}`,
+  };
+
+  try {
+    const templatePath = path.join(__dirname, 'assets', '2.0_letter_template.docx');
+    const templateBuffer = await fs.readFile(templatePath);
+
+    const docBuffer = await createReport({
+      template: templateBuffer,
+      data: replacements,
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', 'attachment; filename=demand-letter.docx');
+    res.send(docBuffer);
+  } catch (err) {
+    console.error("❌ Failed to generate .docx:", err);
+    res.status(500).json({ error: "Docx generation failed" });
+  }
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () =>
