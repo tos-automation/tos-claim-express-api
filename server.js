@@ -7,6 +7,7 @@ const sharp = require("sharp");
 const mammoth = require("mammoth");
 const OpenAI = require("openai");
 const axios = require("axios");
+axios.defaults.timeout = 30000;
 const { createClient } = require("@supabase/supabase-js");
 const { createReport } = require('docx-templates');
 
@@ -30,6 +31,7 @@ app.get("/status", (req, res) => {
 
 app.post("/analyze", upload.single("file"), async (req, res) => {
   const file = req.file;
+  if (!file) return res.status(400).json({ error: "No file uploaded." });
   const fileType = path.extname(file.originalname).toLowerCase();
   const documentId = req.body.documentId;
 
@@ -37,104 +39,127 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     let combined;
 
     if (fileType === ".pdf") {
-      // 🧠 Check cache first
-      const existingImages = await checkIfImagesExist(documentId);
+  let base64Images = [];
 
-      let base64Images = [];
+  try {
+    const existingImages = await checkIfImagesExist(documentId);
 
-      if (existingImages) {
-        console.log("⚡️ Using cached images from Supabase...");
-        for (const img of existingImages) {
-          const { data: download, error } = await supabase.storage
-            .from("documents")
-            .download(img.image_path);
+    if (existingImages) {
+      console.log("⚡️ Using cached images from Supabase...");
+      for (const img of existingImages) {
+        const { data: download, error } = await supabase.storage
+          .from("documents")
+          .download(img.image_path);
 
-          if (download) {
-            const buffer = await download.arrayBuffer();
-            base64Images.push(Buffer.from(buffer).toString("base64"));
-          }
+        if (download) {
+          const buffer = await download.arrayBuffer();
+          base64Images.push(Buffer.from(buffer).toString("base64"));
         }
-      } else {
-        // 🔁 Fallback to PDF.co
-        const presignRes = await axios.get(
-          `https://api.pdf.co/v1/file/upload/get-presigned-url?contenttype=application/octet-stream&name=${encodeURIComponent(
-            path.basename(file.originalname)
-          )}`,
-          { headers: { "x-api-key": PDFCO_API_KEY } }
-        );
+      }
+    } else {
+      // 📤 Upload to PDF.co
+      const presignRes = await axios.get(
+        `https://api.pdf.co/v1/file/upload/get-presigned-url?contenttype=application/octet-stream&name=${encodeURIComponent(
+          path.basename(file.originalname)
+        )}`,
+        { headers: { "x-api-key": PDFCO_API_KEY } }
+      );
 
-        const uploadUrl = presignRes.data.presignedUrl;
-        const uploadedUrl = presignRes.data.url;
+      const uploadUrl = presignRes.data.presignedUrl;
+      const uploadedUrl = presignRes.data.url;
 
-        const fileStream = await fs.readFile(file.path);
-        await axios.put(uploadUrl, fileStream, {
-          headers: { "Content-Type": "application/octet-stream" },
+      const fileStream = await fs.readFile(file.path);
+      await axios.put(uploadUrl, fileStream, {
+        headers: { "Content-Type": "application/octet-stream" },
+      });
+
+      const conversionRes = await axios.post(
+        "https://api.pdf.co/v1/pdf/convert/to/png",
+        {
+          url: uploadedUrl,
+          name: file.originalname,
+          async: false,
+          pages: "0-",
+        },
+        {
+          headers: {
+            "x-api-key": PDFCO_API_KEY,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!conversionRes.data?.urls?.length) {
+        throw new Error("PDF.co conversion returned no images.");
+      }
+
+      for (let i = 0; i < conversionRes.data.urls.length; i++) {
+        const url = conversionRes.data.urls[i];
+        const imgRes = await axios.get(url, { responseType: "arraybuffer" });
+        const buffer = Buffer.from(imgRes.data);
+        const filePath = `converted-images/${documentId}/page-${i + 1}.png`;
+
+        await supabase.storage.from("documents").upload(filePath, buffer, {
+          contentType: "image/png",
+          upsert: true,
         });
 
-        const { data } = await axios.post(
-          "https://api.pdf.co/v1/pdf/convert/to/png",
-          {
-            url: uploadedUrl,
-            name: file.originalname,
-            async: false,
-            pages: "0-",
-          },
-          {
-            headers: {
-              "x-api-key": PDFCO_API_KEY,
-              "Content-Type": "application/json",
-            },
-          }
-        );
+        await supabase.from("converted_images").insert({
+          document_id: documentId,
+          image_path: filePath,
+          page_number: i + 1,
+        });
 
-        if (!data?.urls?.length) {
-          return res.status(500).json({ error: "PDF.co conversion failed." });
-        }
-
-        for (let i = 0; i < data.urls.length; i++) {
-          const url = data.urls[i];
-          const imgRes = await axios.get(url, { responseType: "arraybuffer" });
-          const buffer = Buffer.from(imgRes.data);
-          const filePath = `converted-images/${documentId}/page-${i + 1}.png`;
-
-          // 💾 Upload to Supabase Storage
-          await supabase.storage.from("documents").upload(filePath, buffer, {
-            contentType: "image/png",
-            upsert: true,
-          });
-
-          // 📝 Save record in `converted_images` table
-          await supabase.from("converted_images").insert({
-            document_id: documentId,
-            image_path: filePath,
-            page_number: i + 1,
-          });
-
-          base64Images.push(buffer.toString("base64"));
-        }
+        base64Images.push(buffer.toString("base64"));
       }
+    }
 
-      // ✨ Analyze with GPT
-      const results = [];
-      for (const base64 of base64Images) {
+    // ✨ Analyze with GPT
+    const results = [];
+
+    for (const base64 of base64Images) {
+      try {
         const gptResult = await analyzeImageWithGPT(base64);
         results.push(gptResult);
+      } catch (gptErr) {
+        console.error("❌ GPT image analysis failed:", gptErr?.response?.data || gptErr);
       }
-
-      combined = aggregateExtractedData(results);
     }
+
+    if (results.length === 0) {
+      throw new Error("GPT failed to analyze any pages.");
+    }
+
+    combined = aggregateExtractedData(results);
+  } catch (err) {
+    console.error("❌ PDF/Image analysis error:", err?.response?.data || err);
+    return res.status(502).json({ error: "PDF analysis failed. Please try again." });
+  }
+}
+
 
     if (fileType === ".docx") {
-      const result = await mammoth.extractRawText({ path: file.path });
-      combined = await analyzeTextWithGPT(result.value);
-    }
+  try {
+    const result = await mammoth.extractRawText({ path: file.path });
+    combined = await analyzeTextWithGPT(result.value);
+  } catch (err) {
+    console.error("❌ DOCX analysis error:", err);
+    return res.status(500).json({ error: "Failed to process DOCX file." });
+  }
+}
 
-    if ([".jpg", ".jpeg", ".png"].includes(fileType)) {
-      const imageBuffer = await fs.readFile(file.path);
-      const pngBuffer = await sharp(imageBuffer).png().toBuffer();
-      const base64 = pngBuffer.toString("base64");
-      combined = await analyzeImageWithGPT(base64);
-    }
+if ([".jpg", ".jpeg", ".png"].includes(fileType)) {
+  try {
+    const imageBuffer = await fs.readFile(file.path);
+    const pngBuffer = await sharp(imageBuffer).png().toBuffer();
+    const base64 = pngBuffer.toString("base64");
+    combined = await analyzeImageWithGPT(base64);
+  } catch (err) {
+    console.error("❌ Image analysis error:", err);
+    return res.status(500).json({ error: "Failed to process image file." });
+  }
+}
+
 
     if (!combined) {
       return res.status(400).json({ error: "Unsupported file type" });
