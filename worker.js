@@ -9,10 +9,7 @@ const OpenAI = require("openai");
 const axios = require("axios");
 const { createClient } = require("@supabase/supabase-js");
 
-const connection = new IORedis(process.env.UPSTASH_REDIS_REST_URL, {
-  password: process.env.UPSTASH_REST_TOKEN,
-  tls: true,
-});
+const connection = new IORedis(process.env.REDIS_URL);
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
