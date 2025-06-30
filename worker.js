@@ -131,26 +131,38 @@ const worker = new Worker(
           })
           .eq("id", documentId);
 
-        await supabase
+        const { error: updateJobError } = await supabase
           .from("jobs")
           .update({
             status: "completed",
             completed_at: new Date().toISOString(),
           })
           .eq("job_id", job.id);
+
+        if (updateJobError) {
+          console.error("❌ Failed to update job status:", updateJobError);
+        } else {
+          console.log(`✅ Job ${job.id} marked as completed.`);
+        }
       }
 
       return combined;
     } catch (err) {
       console.error("❌ Job failed:", err);
 
-      await supabase
+      const { error: failUpdateError } = await supabase
         .from("jobs")
         .update({
           status: "failed",
           error_message: err?.message || "Unknown error",
         })
         .eq("job_id", job.id);
+
+      if (failUpdateError) {
+        console.error("❌ Failed to mark job as failed:", failUpdateError);
+      } else {
+        console.log(`⚠️ Job ${job.id} marked as failed.`);
+      }
 
       throw err; // re-throw to let BullMQ know it failed
     } finally {
