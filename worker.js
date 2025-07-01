@@ -109,10 +109,19 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
       }
 
       const results = [];
-      for (const base64 of base64Images) {
-        const gptResult = await analyzeImageWithGPT(base64);
-        results.push(gptResult);
-      }
+      for (let i = 0; i < base64Images.length; i++) {
+  const gptResult = await analyzeImageWithGPT(base64Images[i]);
+
+  // Insert per-page extracted data
+  await supabase.from("extracted_pages").insert({
+    document_id: documentId,
+    page_number: i + 1,
+    content: gptResult,
+  });
+
+  results.push(gptResult);
+}
+
 
       combined = aggregateExtractedData(results);
     }
@@ -153,14 +162,23 @@ async function handleReanalyzeImages(data, jobId) {
 
   const results = [];
   for (const img of existingImages) {
-    const { data: download } = await supabase.storage
-      .from("documents")
-      .download(img.image_path);
-    const buffer = await download.arrayBuffer();
-    const base64 = Buffer.from(buffer).toString("base64");
-    const result = await analyzeImageWithGPT(base64);
-    results.push(result);
-  }
+  const { data: download } = await supabase.storage
+    .from("documents")
+    .download(img.image_path);
+  const buffer = await download.arrayBuffer();
+  const base64 = Buffer.from(buffer).toString("base64");
+  const result = await analyzeImageWithGPT(base64);
+
+  // Insert or upsert page result
+  await supabase.from("extracted_pages").insert({
+    document_id: documentId,
+    page_number: img.page_number,
+    content: result,
+  });
+
+  results.push(result);
+}
+
 
   const combined = aggregateExtractedData(results);
   await updateDocumentStatus(documentId, jobId, "complete", combined);
