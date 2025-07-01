@@ -62,7 +62,18 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
 
         const uploadUrl = presignRes.data.presignedUrl;
         const uploadedUrl = presignRes.data.url;
-        const fileStream = await fs.readFile(filePath);
+        const { data: download, error } = await supabase.storage
+          .from("documents")
+          .download(filePath); // `filePath` is like `case-123/myfile.pdf`
+
+        if (error || !download) {
+          throw new Error(
+            `Failed to download file from Supabase: ${error?.message}`
+          );
+        }
+
+        const fileStream = Buffer.from(await download.arrayBuffer());
+
         await axios.put(uploadUrl, fileStream, {
           headers: { "Content-Type": "application/octet-stream" },
         });
@@ -89,7 +100,9 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
             responseType: "arraybuffer",
           });
           const buffer = Buffer.from(imgRes.data);
-          const filePathRemote = `converted-images/${documentId}/page-${i + 1}.png`;
+          const filePathRemote = `converted-images/${documentId}/page-${
+            i + 1
+          }.png`;
 
           await supabase.storage
             .from("documents")
@@ -110,18 +123,17 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
 
       const results = [];
       for (let i = 0; i < base64Images.length; i++) {
-  const gptResult = await analyzeImageWithGPT(base64Images[i]);
+        const gptResult = await analyzeImageWithGPT(base64Images[i]);
 
-  // Insert per-page extracted data
-  await supabase.from("extracted_pages").insert({
-    document_id: documentId,
-    page_number: i + 1,
-    content: gptResult,
-  });
+        // Insert per-page extracted data
+        await supabase.from("extracted_pages").insert({
+          document_id: documentId,
+          page_number: i + 1,
+          content: gptResult,
+        });
 
-  results.push(gptResult);
-}
-
+        results.push(gptResult);
+      }
 
       combined = aggregateExtractedData(results);
     }
@@ -146,7 +158,7 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
     throw err;
   } finally {
     try {
-      await fs.unlink(filePath);
+      if (filePath && filePath.startsWith("/tmp")) await fs.unlink(filePath);
     } catch (e) {
       console.warn(`⚠️ Could not delete temp file: ${filePath}`);
     }
@@ -162,23 +174,22 @@ async function handleReanalyzeImages(data, jobId) {
 
   const results = [];
   for (const img of existingImages) {
-  const { data: download } = await supabase.storage
-    .from("documents")
-    .download(img.image_path);
-  const buffer = await download.arrayBuffer();
-  const base64 = Buffer.from(buffer).toString("base64");
-  const result = await analyzeImageWithGPT(base64);
+    const { data: download } = await supabase.storage
+      .from("documents")
+      .download(img.image_path);
+    const buffer = await download.arrayBuffer();
+    const base64 = Buffer.from(buffer).toString("base64");
+    const result = await analyzeImageWithGPT(base64);
 
-  // Insert or upsert page result
-  await supabase.from("extracted_pages").insert({
-    document_id: documentId,
-    page_number: img.page_number,
-    content: result,
-  });
+    // Insert or upsert page result
+    await supabase.from("extracted_pages").insert({
+      document_id: documentId,
+      page_number: img.page_number,
+      content: result,
+    });
 
-  results.push(result);
-}
-
+    results.push(result);
+  }
 
   const combined = aggregateExtractedData(results);
   await updateDocumentStatus(documentId, jobId, "complete", combined);
