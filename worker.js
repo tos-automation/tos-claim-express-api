@@ -62,15 +62,21 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
 
         const uploadUrl = presignRes.data.presignedUrl;
         const uploadedUrl = presignRes.data.url;
+        console.log("📦 Downloading from Supabase path:", filePath);
+
         const { data: download, error } = await supabase.storage
           .from("documents")
-          .download(filePath); // `filePath` is like `case-123/myfile.pdf`
+          .download(filePath);
 
         if (error || !download) {
           throw new Error(
-            `Failed to download file from Supabase: ${error?.message}`
+            `Failed to download file from Supabase: ${
+              error?.message || "No file returned"
+            }`
           );
         }
+
+        console.log("✅ File downloaded successfully from Supabase.");
 
         const fileStream = Buffer.from(await download.arrayBuffer());
 
