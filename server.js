@@ -25,6 +25,7 @@ const PDFCO_API_KEY =
   "mark.neil.u.cordero@gmail.com_aPtqQULO5OcnapLI3yTCKximITDXIEFNoFNSyev0blNUhMAsoS874RTu0fy9QmVz";
 
 const { Job } = require("bullmq");
+const { documentQueue } = require("./jobQueue");
 
 app.get("/job-status/:id", async (req, res) => {
   const job = await Job.fromId(documentQueue, req.params.id);
@@ -42,7 +43,6 @@ app.get("/status", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-const { documentQueue } = require("./jobQueue");
 app.post("/analyze", upload.single("file"), async (req, res) => {
   const file = req.file;
   const documentId = req.body.documentId;
@@ -79,6 +79,35 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
     res.status(500).json({ error: "Failed to enqueue job" });
   }
 });
+
+app.post('/reanalyze-images', express.json(), async (req, res) => {
+  const { documentId, userId } = req.body;
+  if (!documentId) return res.status(400).json({ error: 'Missing documentId' });
+
+  try {
+    const job = await documentQueue.add("reanalyze-images", {
+      documentId,
+      userId: userId || 'manual-retry'
+    });
+
+    await supabase.from("jobs").insert({
+      job_id: job.id,
+      user_id: userId || 'manual-retry',
+      document_id: documentId,
+      status: "queued"
+    });
+
+    await supabase.from("documents")
+      .update({ analysis_status: "queued" })
+      .eq("id", documentId);
+
+    res.json({ message: "Reanalysis enqueued", jobId: job.id });
+  } catch (err) {
+    console.error("❌ Failed to enqueue retry job:", err);
+    res.status(500).json({ error: "Retry failed" });
+  }
+});
+
 
 async function analyzeImageWithGPT(base64Image) {
   const result = await openai.chat.completions.create({
