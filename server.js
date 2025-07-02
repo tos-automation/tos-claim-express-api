@@ -244,18 +244,38 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
 
   try {
     if (!structured && documentId) {
-      const { data: doc, error: docError } = await supabase
-        .from("documents")
-        .select("extracted_data")
-        .eq("id", documentId)
-        .single();
+  const { data: pages, error: pageError } = await supabase
+    .from("extracted_pages")
+    .select("content")
+    .eq("document_id", documentId);
 
-      if (docError || !doc) {
-        return res.status(404).json({ error: "Document not found in database" });
+  if (pageError || !pages || pages.length === 0) {
+    return res.status(404).json({ error: "No extracted data found for document" });
+  }
+
+  // Merge extracted data from all pages
+  const merged = {};
+  for (const page of pages) {
+    const content = page.content || {};
+    for (const key in content) {
+      const val = content[key];
+      if (Array.isArray(val)) {
+        merged[key] = [...new Set([...(merged[key] || []), ...val])];
+      } else {
+        merged[key] = merged[key] || val;
       }
-
-      structured = doc.extracted_data;
     }
+  }
+
+  structured = merged;
+
+  // Optional: cache the result back into documents.extracted_data
+  await supabase
+    .from("documents")
+    .update({ extracted_data: structured })
+    .eq("id", documentId);
+}
+
 
     if (mode === 'html') {
       // ✅ Return HTML for preview
