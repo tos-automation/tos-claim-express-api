@@ -62,15 +62,20 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
 
         const uploadUrl = presignRes.data.presignedUrl;
         const uploadedUrl = presignRes.data.url;
-        console.log("📦 Downloading from Supabase path:", filePath);
+        // 🛡️ Sanity check: must NOT start with `/`, and must match actual Supabase key
+        const sanitizedPath = filePath.replace(/^\/+/, ""); // Remove leading slashes
+        console.log(
+          "📦 Attempting download from Supabase path:",
+          sanitizedPath
+        );
 
         const { data: download, error } = await supabase.storage
           .from("documents")
-          .download(filePath.startsWith('/') ? filePath.slice(1) : filePath);
+          .download(sanitizedPath);
 
         if (error || !download) {
           throw new Error(
-            `Failed to download file from Supabase: ${
+            `❌ Failed to download file from Supabase at path "${sanitizedPath}": ${
               error?.message || "No file returned"
             }`
           );
