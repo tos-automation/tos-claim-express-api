@@ -49,13 +49,37 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
   if (!file) return res.status(400).json({ error: "No file uploaded." });
 
   try {
-    const job = await documentQueue.add("analyze-document", {
-      userId: req.body.userId || "unknown", // you can replace with real auth
-      filePath: file.path,
-      fileName: file.originalname,
-      fileType: path.extname(file.originalname).toLowerCase(),
-      documentId,
-    });
+    const supabasePath = `${documentId}/${file.originalname}`;
+
+const fileBuffer = await fs.readFile(file.path);
+
+const { error: uploadError } = await supabase.storage
+  .from("documents")
+  .upload(supabasePath, fileBuffer, {
+    contentType: file.mimetype,
+    upsert: true,
+  });
+
+if (uploadError) {
+  console.error("❌ Failed to upload file to Supabase:", uploadError.message);
+  return res.status(500).json({ error: "Failed to upload file to storage" });
+}
+
+// ✅ Update the document's file_path field
+await supabase
+  .from("documents")
+  .update({ file_path: supabasePath })
+  .eq("id", documentId);
+
+// ✅ Then enqueue job with Supabase path
+const job = await documentQueue.add("analyze-document", {
+  userId: req.body.userId || "unknown",
+  filePath: supabasePath, // 🔄 Now sending Supabase path
+  fileName: file.originalname,
+  fileType: path.extname(file.originalname).toLowerCase(),
+  documentId,
+});
+
 
     await supabase.from("jobs").insert({
       job_id: job.id,

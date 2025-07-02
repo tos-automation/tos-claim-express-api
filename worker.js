@@ -63,7 +63,7 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
         const uploadUrl = presignRes.data.presignedUrl;
         const uploadedUrl = presignRes.data.url;
         // 🛡️ Sanity check: must NOT start with `/`, and must match actual Supabase key
-        const sanitizedPath = filePath.replace(/^\/+/, ""); // Remove leading slashes
+        const sanitizedPath = filePath; // Remove leading slashes
         console.log(
           "📦 Attempting download from Supabase path:",
           sanitizedPath
@@ -150,12 +150,35 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
     }
 
     if (fileType === ".docx") {
-      const result = await mammoth.extractRawText({ path: filePath });
+      const { data: download, error } = await supabase.storage
+        .from("documents")
+        .download(filePath);
+
+      if (error || !download) {
+        throw new Error(
+          `❌ Failed to download DOCX from Supabase: ${error?.message}`
+        );
+      }
+
+      const buffer = Buffer.from(await download.arrayBuffer());
+      const result = await mammoth.extractRawText({ buffer });
+
       combined = await analyzeTextWithGPT(result.value);
     }
 
     if ([".jpg", ".jpeg", ".png"].includes(fileType)) {
-      const imageBuffer = await fs.readFile(filePath);
+      const { data: download, error } = await supabase.storage
+        .from("documents")
+        .download(filePath);
+
+      if (error || !download) {
+        throw new Error(
+          `❌ Failed to download image from Supabase: ${error?.message}`
+        );
+      }
+
+      const imageBuffer = Buffer.from(await download.arrayBuffer());
+
       const pngBuffer = await sharp(imageBuffer).png().toBuffer();
       const base64 = pngBuffer.toString("base64");
       combined = await analyzeImageWithGPT(base64);
