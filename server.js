@@ -234,7 +234,7 @@ function isPipClinicMatch(providerName) {
 const generateDemandLetterBuffer = require("./utils/generateDemandLetterBuffer");
 
 app.post("/generate-demand-letter", express.json(), async (req, res) => {
-  const { documentId, extractedData } = req.body;
+  const { documentId, extractedData, mode } = req.body;
 
   let structured = extractedData;
 
@@ -257,6 +257,13 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
       structured = doc.extracted_data;
     }
 
+    if (mode === 'html') {
+      // ✅ Return HTML for preview
+      const html = await generateDemandLetterBuffer(structured, { asHtml: true }); // You'll need to support this in your template function
+      return res.json({ html });
+    }
+
+    // Default: return .docx
     const docBuffer = await generateDemandLetterBuffer(structured);
 
     res.setHeader(
@@ -273,6 +280,7 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
     res.status(500).json({ error: "Demand letter generation failed" });
   }
 });
+
 
 
 
