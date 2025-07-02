@@ -66,7 +66,7 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
 
         const { data: download, error } = await supabase.storage
           .from("documents")
-          .download(filePath);
+          .download(filePath.startsWith('/') ? filePath.slice(1) : filePath);
 
         if (error || !download) {
           throw new Error(
