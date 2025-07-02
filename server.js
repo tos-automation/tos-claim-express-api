@@ -10,6 +10,9 @@ const axios = require("axios");
 axios.defaults.timeout = 30000;
 const { createClient } = require("@supabase/supabase-js");
 const { createReport } = require("docx-templates");
+const cors = require("cors");
+
+    // ✅ then use middleware
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -17,6 +20,7 @@ const supabase = createClient(
 );
 
 const app = express();
+app.use(cors());
 const upload = multer({ dest: "uploads/" });
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
