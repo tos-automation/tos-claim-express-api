@@ -134,13 +134,22 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
 
       const results = [];
       for (let i = 0; i < base64Images.length; i++) {
-        const gptResult = await analyzeImageWithGPT(base64Images[i]);
+        const gptResultRaw = await analyzeImageWithGPT(base64Images[i]);
 
-        // Insert per-page extracted data
+        let parsed;
+        try {
+          parsed =
+            typeof gptResultRaw === "string"
+              ? JSON.parse(gptResultRaw)
+              : gptResultRaw;
+        } catch {
+          parsed = { raw_text: gptResultRaw };
+        }
+
         await supabase.from("extracted_pages").insert({
           document_id: documentId,
           page_number: i + 1,
-          content: gptResult,
+          content: parsed,
         });
 
         results.push(gptResult);
