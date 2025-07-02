@@ -231,6 +231,8 @@ function isPipClinicMatch(providerName) {
   return pipClinics.some(clinic => name.includes(clinic));
 }
 
+const generateDemandLetterBuffer = require("./utils/generateDemandLetterBuffer");
+
 app.post("/generate-demand-letter", express.json(), async (req, res) => {
   const { documentId, extractedData } = req.body;
 
@@ -252,68 +254,10 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
         return res.status(404).json({ error: "Document not found in database" });
       }
 
-      if (doc.extracted_data) {
-        structured = doc.extracted_data;
-      } else {
-        const { data: pages, error: pageErr } = await supabase
-          .from("extracted_pages")
-          .select("content")
-          .eq("document_id", documentId)
-          .order("page_number", { ascending: true });
-
-        if (pageErr || !pages?.length) {
-          return res.status(404).json({ error: "No extracted data available from pages" });
-        }
-
-        structured = pages.reduce((acc, page) => {
-          if (typeof page.content === "object") Object.assign(acc, page.content);
-          return acc;
-        }, {});
-      }
+      structured = doc.extracted_data;
     }
 
-    const {
-      "Claimant Name": name,
-      "Insured Name": insuredName,
-      "Provider": provider,
-      "Claim Number": claimNumber,
-      "Insurance Company": insuranceCompany,
-      "Dates of Service": dos,
-      "Bill Amount": billAmount,
-      summary,
-    } = structured;
-
-    const replacements = {
-      "«current_date_long»": new Date().toLocaleDateString("en-US", {
-        month: "long",
-        day: "numeric",
-        year: "numeric",
-      }),
-      "«Plaintiff_full_name»": name || "",
-      "«Defendant_Insurance_Co_insured»": insuredName || "",
-      "«Clinic_company_sk»": provider || "",
-      "«Defendant_Insurance_Co_claim_number»": claimNumber || "",
-      "«matter_number»": `AUTO-GEN-${Date.now()}`,
-      "«Defendant_Insurance_Co_company_sk»": insuranceCompany || "",
-      "«service_date_range»": Array.isArray(dos) ? dos.join(" - ") : dos || "",
-      "$0": `$${(parseFloat(String(billAmount)) || 0).toFixed(2)}`,
-    };
-
-    const useTemplate2 = isPipClinicMatch(provider);
-    const templatePath = path.join(
-      __dirname,
-      "assets",
-      useTemplate2 ? "2.0_letter_template.docx" : "1.0_LETTER_TEMPLATE.docx"
-    );
-
-    console.log(`📝 Using template: ${useTemplate2 ? "2.0" : "1.0"} for provider "${provider}"`);
-
-    const templateBuffer = await fs.readFile(templatePath);
-
-    const docBuffer = await createReport({
-      template: templateBuffer,
-      data: replacements,
-    });
+    const docBuffer = await generateDemandLetterBuffer(structured);
 
     res.setHeader(
       "Content-Type",
@@ -329,6 +273,7 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
     res.status(500).json({ error: "Demand letter generation failed" });
   }
 });
+
 
 
 
