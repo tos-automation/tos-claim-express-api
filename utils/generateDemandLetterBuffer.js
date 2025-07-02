@@ -88,19 +88,20 @@ async function generateDemandLetterBuffer(structuredData = {}, options = {}) {
   const templateBuffer = await fs.readFile(templatePath);
 
   const docBuffer = await createReport({
-    template: templateBuffer,
-    data: {
-      "«current_date_long»": replacements.currentDate,
-      "«Plaintiff_full_name»": replacements.name,
-      "«Defendant_Insurance_Co_insured»": replacements.insuredName,
-      "«Clinic_company_sk»": replacements.provider,
-      "«Defendant_Insurance_Co_claim_number»": replacements.claimNumber,
-      "«matter_number»": `AUTO-GEN-${Date.now()}`,
-      "«Defendant_Insurance_Co_company_sk»": replacements.insuranceCompany,
-      "«service_date_range»": replacements.serviceDates,
-      "«bill_amount»": replacements.billAmount,
-    },
-  });
+  template: templateBuffer,
+  data: {
+    "{current_date_long}": replacements.currentDate,
+    "{Plaintiff_full_name}": replacements.name,
+    "{Defendant_Insurance_Co_insured}": replacements.insuredName,
+    "{Clinic_company_sk}": replacements.provider,
+    "{Defendant_Insurance_Co_claim_number}": replacements.claimNumber,
+    "{matter_number}": `AUTO-GEN-${Date.now()}`,
+    "{Defendant_Insurance_Co_company_sk}": replacements.insuranceCompany,
+    "{service_date_range}": replacements.serviceDates,
+    "{bill_amount}": replacements.billAmount,
+  },
+});
+
 
   return docBuffer;
 }
