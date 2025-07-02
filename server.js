@@ -213,42 +213,101 @@ function aggregateExtractedData(results) {
   }
   return merged;
 }
-app.post("/generate-demand-letter", express.json(), async (req, res) => {
-  const { extractedData } = req.body;
 
-  if (!extractedData || typeof extractedData !== "object") {
-    return res.status(400).json({ error: "Missing extracted data" });
+const pipClinics = [
+  "quantum chiropractic", "total injury", "good health medical",
+  "naples family health", "advanced wellness", "a1 medical",
+  "441 chiropractic", "pompano beach healing", "brofsky accident",
+  "renewed health", "grassam family", "spine & extremity",
+  "flex medical", "med plus", "bentin", "tropical chiropractic",
+  "mohammad t. javed", "florida orthopedic", "shree mri", "revive chiropractic",
+  "tamarac chiropractic", "sunlight chiropractic", "dr. craig selinger",
+  "margate medical", "napoli chiropractic", "behnam meyers", "glenn v. quintana",
+  "advanced orthopedics", "amos", "gady abramson", "back to mind", "premier wellness"
+];
+
+function isPipClinicMatch(providerName) {
+  const name = providerName?.toLowerCase() || "";
+  return pipClinics.some(clinic => name.includes(clinic));
+}
+
+app.post("/generate-demand-letter", express.json(), async (req, res) => {
+  const { documentId, extractedData } = req.body;
+
+  let structured = extractedData;
+
+  if (!structured && !documentId) {
+    return res.status(400).json({ error: "Missing documentId or extractedData" });
   }
 
-  const { claimantInfo, accidentDetails, medicalProviders, medicalExpenses } =
-    extractedData;
-
-  const totalBillAmount =
-    medicalExpenses?.reduce((sum, item) => sum + (item.amount || 0), 0) || 0;
-
-  const replacements = {
-    "«current_date_long»": new Date().toLocaleDateString("en-US", {
-      month: "long",
-      day: "numeric",
-      year: "numeric",
-    }),
-    "«Plaintiff_full_name»": claimantInfo?.name || "",
-    "«Defendant_Insurance_Co_insured»": accidentDetails?.insuredName || "",
-    "«Clinic_company_sk»": medicalProviders?.[0] || "",
-    "«Defendant_Insurance_Co_claim_number»": accidentDetails?.claimNumber || "",
-    "«matter_number»": accidentDetails?.matterNumber || "",
-    "«Defendant_Insurance_Co_company_sk»":
-      accidentDetails?.insuranceCompany || "",
-    _____: accidentDetails?.serviceDateRange || "",
-    $0: `$${totalBillAmount.toFixed(2)}`,
-  };
-
   try {
+    if (!structured && documentId) {
+      const { data: doc, error: docError } = await supabase
+        .from("documents")
+        .select("extracted_data")
+        .eq("id", documentId)
+        .single();
+
+      if (docError || !doc) {
+        return res.status(404).json({ error: "Document not found in database" });
+      }
+
+      if (doc.extracted_data) {
+        structured = doc.extracted_data;
+      } else {
+        const { data: pages, error: pageErr } = await supabase
+          .from("extracted_pages")
+          .select("content")
+          .eq("document_id", documentId)
+          .order("page_number", { ascending: true });
+
+        if (pageErr || !pages?.length) {
+          return res.status(404).json({ error: "No extracted data available from pages" });
+        }
+
+        structured = pages.reduce((acc, page) => {
+          if (typeof page.content === "object") Object.assign(acc, page.content);
+          return acc;
+        }, {});
+      }
+    }
+
+    const {
+      "Claimant Name": name,
+      "Insured Name": insuredName,
+      "Provider": provider,
+      "Claim Number": claimNumber,
+      "Insurance Company": insuranceCompany,
+      "Dates of Service": dos,
+      "Bill Amount": billAmount,
+      summary,
+    } = structured;
+
+    const replacements = {
+      "«current_date_long»": new Date().toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      }),
+      "«Plaintiff_full_name»": name || "",
+      "«Defendant_Insurance_Co_insured»": insuredName || "",
+      "«Clinic_company_sk»": provider || "",
+      "«Defendant_Insurance_Co_claim_number»": claimNumber || "",
+      "«matter_number»": `AUTO-GEN-${Date.now()}`,
+      "«Defendant_Insurance_Co_company_sk»": insuranceCompany || "",
+      "«service_date_range»": Array.isArray(dos) ? dos.join(" - ") : dos || "",
+      "$0": `$${(parseFloat(String(billAmount)) || 0).toFixed(2)}`,
+    };
+
+    const useTemplate2 = isPipClinicMatch(provider);
     const templatePath = path.join(
       __dirname,
       "assets",
-      "2.0_letter_template.docx"
+      useTemplate2 ? "2.0_letter_template.docx" : "1.0_LETTER_TEMPLATE.docx"
     );
+
+    console.log(`📝 Using template: ${useTemplate2 ? "2.0" : "1.0"} for provider "${provider}"`);
+
     const templateBuffer = await fs.readFile(templatePath);
 
     const docBuffer = await createReport({
@@ -262,14 +321,16 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
     );
     res.setHeader(
       "Content-Disposition",
-      "attachment; filename=demand-letter.docx"
+      `attachment; filename=demand-letter-${Date.now()}.docx`
     );
     res.send(docBuffer);
   } catch (err) {
-    console.error("❌ Failed to generate .docx:", err);
-    res.status(500).json({ error: "Docx generation failed" });
+    console.error("❌ Failed to generate demand letter:", err);
+    res.status(500).json({ error: "Demand letter generation failed" });
   }
 });
+
+
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () =>
