@@ -98,7 +98,7 @@ async function generateDemandLetterBuffer(structuredData = {}, options = {}) {
       "«matter_number»": `AUTO-GEN-${Date.now()}`,
       "«Defendant_Insurance_Co_company_sk»": replacements.insuranceCompany,
       "«service_date_range»": replacements.serviceDates,
-      "$0": replacements.billAmount,
+      "«bill_amount»": replacements.billAmount,
     },
   });
 
