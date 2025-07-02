@@ -152,7 +152,7 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
           content: parsed,
         });
 
-        results.push(gptResult);
+        results.push(parsed);
       }
 
       combined = aggregateExtractedData(results);
