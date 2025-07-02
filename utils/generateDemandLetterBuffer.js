@@ -20,6 +20,19 @@ function isPipClinicMatch(providerName = "") {
 }
 
 async function generateDemandLetterBuffer(structuredData = {}, options = {}) {
+  // 🟡 Try to parse raw_text if it exists
+  if (structuredData.raw_text) {
+    try {
+      const match = structuredData.raw_text.match(/```json\s*([\s\S]+?)\s*```|({[\s\S]+})/);
+      const jsonStr = match?.[1] || match?.[0];
+      if (jsonStr) {
+        structuredData = JSON.parse(jsonStr.trim());
+      }
+    } catch (err) {
+      console.warn("⚠️ Failed to parse raw_text in generateDemandLetterBuffer:", err);
+    }
+  }
+
   const {
     "Claimant Name": name,
     "Insured Name": insuredName,
@@ -45,7 +58,7 @@ async function generateDemandLetterBuffer(structuredData = {}, options = {}) {
     billAmount: `$${(parseFloat(String(billAmount)) || 0).toFixed(2)}`
   };
 
-  // ✅ Return HTML instead of docx if requested
+  // ✅ HTML preview
   if (options.asHtml) {
     return `
       <div>
@@ -91,5 +104,6 @@ async function generateDemandLetterBuffer(structuredData = {}, options = {}) {
 
   return docBuffer;
 }
+
 
 module.exports = generateDemandLetterBuffer;

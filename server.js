@@ -12,7 +12,7 @@ const { createClient } = require("@supabase/supabase-js");
 const { createReport } = require("docx-templates");
 const cors = require("cors");
 
-    // ✅ then use middleware
+// ✅ then use middleware
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -55,35 +55,39 @@ app.post("/analyze", upload.single("file"), async (req, res) => {
   try {
     const supabasePath = `${documentId}/${file.originalname}`;
 
-const fileBuffer = await fs.readFile(file.path);
+    const fileBuffer = await fs.readFile(file.path);
 
-const { error: uploadError } = await supabase.storage
-  .from("documents")
-  .upload(supabasePath, fileBuffer, {
-    contentType: file.mimetype,
-    upsert: true,
-  });
+    const { error: uploadError } = await supabase.storage
+      .from("documents")
+      .upload(supabasePath, fileBuffer, {
+        contentType: file.mimetype,
+        upsert: true,
+      });
 
-if (uploadError) {
-  console.error("❌ Failed to upload file to Supabase:", uploadError.message);
-  return res.status(500).json({ error: "Failed to upload file to storage" });
-}
+    if (uploadError) {
+      console.error(
+        "❌ Failed to upload file to Supabase:",
+        uploadError.message
+      );
+      return res
+        .status(500)
+        .json({ error: "Failed to upload file to storage" });
+    }
 
-// ✅ Update the document's file_path field
-await supabase
-  .from("documents")
-  .update({ file_path: supabasePath })
-  .eq("id", documentId);
+    // ✅ Update the document's file_path field
+    await supabase
+      .from("documents")
+      .update({ file_path: supabasePath })
+      .eq("id", documentId);
 
-// ✅ Then enqueue job with Supabase path
-const job = await documentQueue.add("analyze-document", {
-  userId: req.body.userId || "unknown",
-  filePath: supabasePath, // 🔄 Now sending Supabase path
-  fileName: file.originalname,
-  fileType: path.extname(file.originalname).toLowerCase(),
-  documentId,
-});
-
+    // ✅ Then enqueue job with Supabase path
+    const job = await documentQueue.add("analyze-document", {
+      userId: req.body.userId || "unknown",
+      filePath: supabasePath, // 🔄 Now sending Supabase path
+      fileName: file.originalname,
+      fileType: path.extname(file.originalname).toLowerCase(),
+      documentId,
+    });
 
     await supabase.from("jobs").insert({
       job_id: job.id,
@@ -108,24 +112,25 @@ const job = await documentQueue.add("analyze-document", {
   }
 });
 
-app.post('/reanalyze-images', express.json(), async (req, res) => {
+app.post("/reanalyze-images", express.json(), async (req, res) => {
   const { documentId, userId } = req.body;
-  if (!documentId) return res.status(400).json({ error: 'Missing documentId' });
+  if (!documentId) return res.status(400).json({ error: "Missing documentId" });
 
   try {
     const job = await documentQueue.add("reanalyze-images", {
       documentId,
-      userId: userId || 'manual-retry'
+      userId: userId || "manual-retry",
     });
 
     await supabase.from("jobs").insert({
       job_id: job.id,
-      user_id: userId || 'manual-retry',
+      user_id: userId || "manual-retry",
       document_id: documentId,
-      status: "queued"
+      status: "queued",
     });
 
-    await supabase.from("documents")
+    await supabase
+      .from("documents")
       .update({ analysis_status: "queued" })
       .eq("id", documentId);
 
@@ -135,7 +140,6 @@ app.post('/reanalyze-images', express.json(), async (req, res) => {
     res.status(500).json({ error: "Retry failed" });
   }
 });
-
 
 async function analyzeImageWithGPT(base64Image) {
   const result = await openai.chat.completions.create({
@@ -219,20 +223,43 @@ function aggregateExtractedData(results) {
 }
 
 const pipClinics = [
-  "quantum chiropractic", "total injury", "good health medical",
-  "naples family health", "advanced wellness", "a1 medical",
-  "441 chiropractic", "pompano beach healing", "brofsky accident",
-  "renewed health", "grassam family", "spine & extremity",
-  "flex medical", "med plus", "bentin", "tropical chiropractic",
-  "mohammad t. javed", "florida orthopedic", "shree mri", "revive chiropractic",
-  "tamarac chiropractic", "sunlight chiropractic", "dr. craig selinger",
-  "margate medical", "napoli chiropractic", "behnam meyers", "glenn v. quintana",
-  "advanced orthopedics", "amos", "gady abramson", "back to mind", "premier wellness"
+  "quantum chiropractic",
+  "total injury",
+  "good health medical",
+  "naples family health",
+  "advanced wellness",
+  "a1 medical",
+  "441 chiropractic",
+  "pompano beach healing",
+  "brofsky accident",
+  "renewed health",
+  "grassam family",
+  "spine & extremity",
+  "flex medical",
+  "med plus",
+  "bentin",
+  "tropical chiropractic",
+  "mohammad t. javed",
+  "florida orthopedic",
+  "shree mri",
+  "revive chiropractic",
+  "tamarac chiropractic",
+  "sunlight chiropractic",
+  "dr. craig selinger",
+  "margate medical",
+  "napoli chiropractic",
+  "behnam meyers",
+  "glenn v. quintana",
+  "advanced orthopedics",
+  "amos",
+  "gady abramson",
+  "back to mind",
+  "premier wellness",
 ];
 
 function isPipClinicMatch(providerName) {
   const name = providerName?.toLowerCase() || "";
-  return pipClinics.some(clinic => name.includes(clinic));
+  return pipClinics.some((clinic) => name.includes(clinic));
 }
 
 const generateDemandLetterBuffer = require("./utils/generateDemandLetterBuffer");
@@ -243,47 +270,67 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
   let structured = extractedData;
 
   if (!structured && !documentId) {
-    return res.status(400).json({ error: "Missing documentId or extractedData" });
+    return res
+      .status(400)
+      .json({ error: "Missing documentId or extractedData" });
   }
 
   try {
     if (!structured && documentId) {
-  const { data: pages, error: pageError } = await supabase
-    .from("extracted_pages")
-    .select("content")
-    .eq("document_id", documentId);
+      const { data: pages, error: pageError } = await supabase
+        .from("extracted_pages")
+        .select("content")
+        .eq("document_id", documentId);
 
-  if (pageError || !pages || pages.length === 0) {
-    return res.status(404).json({ error: "No extracted data found for document" });
-  }
-
-  // Merge extracted data from all pages
-  const merged = {};
-  for (const page of pages) {
-    const content = page.content || {};
-    for (const key in content) {
-      const val = content[key];
-      if (Array.isArray(val)) {
-        merged[key] = [...new Set([...(merged[key] || []), ...val])];
-      } else {
-        merged[key] = merged[key] || val;
+      if (pageError || !pages || pages.length === 0) {
+        return res
+          .status(404)
+          .json({ error: "No extracted data found for document" });
       }
+
+      // Merge extracted data from all pages
+      const merged = {};
+      for (const page of pages) {
+        let content = page.content || {};
+        if (content.raw_text) {
+          try {
+            const match = content.raw_text.match(
+              /```json\s*([\s\S]+?)\s*```|({[\s\S]+})/
+            );
+            const jsonStr = match?.[1] || match?.[0];
+            if (jsonStr) content = JSON.parse(jsonStr.trim());
+          } catch (err) {
+            console.warn(
+              "❌ Failed to parse raw_text from extracted_pages:",
+              err
+            );
+          }
+        }
+
+        for (const key in content) {
+          const val = content[key];
+          if (Array.isArray(val)) {
+            merged[key] = [...new Set([...(merged[key] || []), ...val])];
+          } else {
+            merged[key] = merged[key] || val;
+          }
+        }
+      }
+
+      structured = merged;
+
+      // Optional: cache the result back into documents.extracted_data
+      await supabase
+        .from("documents")
+        .update({ extracted_data: structured })
+        .eq("id", documentId);
     }
-  }
 
-  structured = merged;
-
-  // Optional: cache the result back into documents.extracted_data
-  await supabase
-    .from("documents")
-    .update({ extracted_data: structured })
-    .eq("id", documentId);
-}
-
-
-    if (mode === 'html') {
+    if (mode === "html") {
       // ✅ Return HTML for preview
-      const html = await generateDemandLetterBuffer(structured, { asHtml: true }); // You'll need to support this in your template function
+      const html = await generateDemandLetterBuffer(structured, {
+        asHtml: true,
+      }); // You'll need to support this in your template function
       return res.json({ html });
     }
 
@@ -305,14 +352,10 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
   }
 });
 
-
-
-
-
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () =>
   console.log(`🚀 Express server running on port ${PORT}`)
 );
 
 // Start worker alongside the server
-require('./worker');
+require("./worker");

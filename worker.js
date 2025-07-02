@@ -338,7 +338,21 @@ async function checkIfImagesExist(documentId) {
 
 function aggregateExtractedData(results) {
   const merged = {};
-  for (const result of results) {
+
+  for (let result of results) {
+    // 🟡 Try to extract structured JSON from raw_text if present
+    if (result.raw_text) {
+      try {
+        const match = result.raw_text.match(/```json\s*([\s\S]+?)\s*```|({[\s\S]+})/);
+        const jsonStr = match?.[1] || match?.[0];
+        if (jsonStr) {
+          result = JSON.parse(jsonStr.trim());
+        }
+      } catch (err) {
+        console.warn("⚠️ Failed to parse raw_text in worker:", err);
+      }
+    }
+
     for (const key in result) {
       if (!merged[key]) {
         merged[key] = result[key];
@@ -347,5 +361,7 @@ function aggregateExtractedData(results) {
       }
     }
   }
+
   return merged;
 }
+
