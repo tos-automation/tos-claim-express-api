@@ -265,7 +265,7 @@ function isPipClinicMatch(providerName) {
 const generateDemandLetterBuffer = require("./utils/generateDemandLetterBuffer");
 
 app.post("/generate-demand-letter", express.json(), async (req, res) => {
-  const { documentId, extractedData, mode } = req.body;
+  const { documentId, extractedData, mode, forceRetry } = req.body; // 🆕 include forceRetry
 
   let structured = extractedData;
 
@@ -276,7 +276,7 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
   }
 
   try {
-    if (!structured && documentId) {
+    if ((!structured && documentId) || forceRetry) {
       const { data: pages, error: pageError } = await supabase
         .from("extracted_pages")
         .select("content")
@@ -288,11 +288,12 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
           .json({ error: "No extracted data found for document" });
       }
 
-      // Merge extracted data from all pages
+      // 🆕 Force retry = parse raw_text again even if data already exists
       const merged = {};
       for (const page of pages) {
         let content = page.content || {};
-        if (content.raw_text) {
+
+        if (forceRetry && content.raw_text) {
           try {
             const match = content.raw_text.match(
               /```json\s*([\s\S]+?)\s*```|({[\s\S]+})/
@@ -300,10 +301,7 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
             const jsonStr = match?.[1] || match?.[0];
             if (jsonStr) content = JSON.parse(jsonStr.trim());
           } catch (err) {
-            console.warn(
-              "❌ Failed to parse raw_text from extracted_pages:",
-              err
-            );
+            console.warn("❌ Failed to re-parse raw_text:", err);
           }
         }
 
@@ -319,22 +317,22 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
 
       structured = merged;
 
-      // Optional: cache the result back into documents.extracted_data
-      await supabase
-        .from("documents")
-        .update({ extracted_data: structured })
-        .eq("id", documentId);
+      // Cache back into documents.extracted_data unless forceRetry
+      if (!forceRetry) {
+        await supabase
+          .from("documents")
+          .update({ extracted_data: structured })
+          .eq("id", documentId);
+      }
     }
 
     if (mode === "html") {
-      // ✅ Return HTML for preview
       const html = await generateDemandLetterBuffer(structured, {
         asHtml: true,
-      }); // You'll need to support this in your template function
+      });
       return res.json({ html });
     }
 
-    // Default: return .docx
     const docBuffer = await generateDemandLetterBuffer(structured);
 
     res.setHeader(
