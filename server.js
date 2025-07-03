@@ -272,7 +272,7 @@ function isPipClinicMatch(providerName) {
 const generateDemandLetterBuffer = require("./utils/generateDemandLetterBuffer");
 
 app.post("/generate-demand-letter", express.json(), async (req, res) => {
-  const { documentId, extractedData, mode, forceRetry } = req.body; // 🆕 include forceRetry
+  const { documentId, extractedData, mode, forceRetry } = req.body;
 
   let structured = extractedData;
 
@@ -295,48 +295,38 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
           .json({ error: "No extracted data found for document" });
       }
 
-      // 🆕 Force retry = parse raw_text again even if data already exists
       const merged = {};
       for (const page of pages) {
         let content = page.content || {};
 
-        // ⬇️ Try parsing raw_text if it exists
         if (content.raw_text) {
-  try {
-    const match = content.raw_text.match(
-      /```json\s*([\s\S]+?)\s*```|({[\s\S]+})/
-    );
-    const jsonStr = match?.[1] || match?.[0];
-    if (jsonStr) {
-      const parsed = JSON.parse(jsonStr.trim());
-      content = parsed;
-    }
-  } catch (err) {
-    console.warn(
-      "❌ Failed to parse raw_text on page:",
-      page.page_number,
-      err
-    );
-  }
-}
+          try {
+            const match = content.raw_text.match(
+              /```json\s*([\s\S]+?)\s*```|({[\s\S]+})/
+            );
+            const jsonStr = match?.[1] || match?.[0];
+            if (jsonStr) {
+              content = JSON.parse(jsonStr.trim());
+            }
+          } catch (err) {
+            console.warn("❌ Failed to parse raw_text on page:", err);
+          }
+        }
 
-// ✅ Always merge structured keys, even if raw_text is missing
-for (const key in content) {
-  const val = content[key];
-  if (Array.isArray(val)) {
-    merged[key] = [...new Set([...(merged[key] || []), ...val])];
-  } else if (val && typeof val === "object" && !Array.isArray(val)) {
-    merged[key] = { ...(merged[key] || {}), ...val }; // for nested objects
-  } else {
-    merged[key] = merged[key] || val;
-  }
-}
-
+        for (const key in content) {
+          const val = content[key];
+          if (Array.isArray(val)) {
+            merged[key] = [...new Set([...(merged[key] || []), ...val])];
+          } else if (val && typeof val === "object" && !Array.isArray(val)) {
+            merged[key] = { ...(merged[key] || {}), ...val };
+          } else {
+            merged[key] = merged[key] || val;
+          }
+        }
       }
 
       structured = merged;
 
-      // Cache back into documents.extracted_data unless forceRetry
       if (!forceRetry) {
         await supabase
           .from("documents")
@@ -345,6 +335,7 @@ for (const key in content) {
       }
     }
 
+    // ✅ Only support HTML for now
     if (mode === "html") {
       const html = await generateDemandLetterBuffer(structured, {
         asHtml: true,
@@ -352,22 +343,16 @@ for (const key in content) {
       return res.json({ html });
     }
 
-    const docBuffer = await generateDemandLetterBuffer(structured);
-
-    res.setHeader(
-      "Content-Type",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    );
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename=demand-letter-${Date.now()}.docx`
-    );
-    res.send(docBuffer);
+    // ❌ DOCX is disabled
+    return res.status(400).json({
+      error: "DOCX generation is currently disabled. Use mode: 'html' instead.",
+    });
   } catch (err) {
     console.error("❌ Failed to generate demand letter:", err);
     res.status(500).json({ error: "Demand letter generation failed" });
   }
 });
+
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () =>
