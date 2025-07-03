@@ -84,7 +84,7 @@ async function generateDemandLetterBuffer(structuredData = {}, options = {}) {
     __dirname,
     "..",
     "assets",
-    useTemplate2 ? "2.0_letter_template.docx" : "1.0_LETTER_TEMPLATE.docx"
+    useTemplate2 ? "2.0_letter_template.html" : "1.0_LETTER_TEMPLATE.html"
   );
   const templateBuffer = await fs.readFile(docxTemplatePath);
 
