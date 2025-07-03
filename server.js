@@ -20,7 +20,12 @@ const supabase = createClient(
 );
 
 const app = express();
-app.use(cors());
+app.use(cors({
+  origin: 'https://tos-claim-clarity.vercel.app',
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+}));
+
 const upload = multer({ dest: "uploads/" });
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
