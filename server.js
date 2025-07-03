@@ -337,8 +337,9 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
 
     if (mode === "html") {
   const html = await generateDemandLetterBuffer(structured, { asHtml: true });
-  res.setHeader("Content-Type", "text/html");
-  return res.send(html); // ← raw HTML, no JSON wrapper
+  return res
+    .setHeader("Content-Type", "text/html")
+    .send(html); // ✅ Send raw HTML response
 }
 
 
