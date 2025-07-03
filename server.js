@@ -359,5 +359,27 @@ app.listen(PORT, () =>
   console.log(`🚀 Express server running on port ${PORT}`)
 );
 
+const htmlDocx = require("html-docx-js");
+
+app.post("/convert-html-to-docx", express.json(), async (req, res) => {
+  const { html, filename = "demand-letter" } = req.body;
+
+  if (!html) {
+    return res.status(400).json({ error: "Missing HTML content" });
+  }
+
+  try {
+    const docxBuffer = htmlDocx.asBlob(html);
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    res.setHeader("Content-Disposition", `attachment; filename=${filename}.docx`);
+    res.send(docxBuffer);
+  } catch (err) {
+    console.error("❌ Failed to convert HTML to DOCX:", err);
+    res.status(500).json({ error: "Failed to convert HTML to DOCX" });
+  }
+});
+
+
 // Start worker alongside the server
 require("./worker");

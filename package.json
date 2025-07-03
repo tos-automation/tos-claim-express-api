@@ -17,6 +17,7 @@
     "cors": "^2.8.5",
     "docx-templates": "^4.14.1",
     "express": "^5.1.0",
+    "html-docx-js": "^0.3.1",
     "ioredis": "^5.6.1",
     "mammoth": "^1.9.1",
     "multer": "^2.0.1",
