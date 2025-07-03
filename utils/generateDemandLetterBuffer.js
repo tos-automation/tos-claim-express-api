@@ -66,7 +66,34 @@ async function generateDemandLetterBuffer(structuredData = {}, options = {}) {
     html = html.replace(regex, value);
   }
 
-  return html;
+  const wrappedHtml = `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="UTF-8">
+      <style>
+        body {
+          font-family: 'Times New Roman', serif;
+          font-size: 12pt;
+          line-height: 1.5;
+          margin: 1in;
+        }
+        h1, h2, h3 {
+          margin-bottom: 0.5em;
+        }
+        p {
+          margin: 0.5em 0;
+        }
+      </style>
+    </head>
+    <body>
+      ${html}
+    </body>
+  </html>
+`;
+
+return wrappedHtml;
+
 }
 
 module.exports = generateDemandLetterBuffer;

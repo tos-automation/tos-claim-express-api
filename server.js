@@ -335,13 +335,12 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
       }
     }
 
-    // ✅ Only support HTML for now
     if (mode === "html") {
-      const html = await generateDemandLetterBuffer(structured, {
-        asHtml: true,
-      });
-      return res.json({ html });
-    }
+  const html = await generateDemandLetterBuffer(structured, { asHtml: true });
+  res.setHeader("Content-Type", "text/html");
+  return res.send(html); // ← raw HTML, no JSON wrapper
+}
+
 
     // ❌ DOCX is disabled
     return res.status(400).json({
@@ -376,14 +375,21 @@ app.post("/convert-html-to-docx", express.json(), async (req, res) => {
       pageNumber: true,
     });
 
-    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-    res.setHeader("Content-Disposition", `attachment; filename=${filename || "document"}.docx`);
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=${filename || "demand-letter"}.docx`
+    );
     res.send(buffer);
   } catch (err) {
     console.error("❌ Failed to convert HTML to DOCX:", err);
     res.status(500).json({ error: "Conversion failed." });
   }
 });
+
 
 
 
