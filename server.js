@@ -302,30 +302,36 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
 
         // ⬇️ Try parsing raw_text if it exists
         if (content.raw_text) {
-          try {
-            const match = content.raw_text.match(
-              /```json\s*([\s\S]+?)\s*```|({[\s\S]+})/
-            );
-            const jsonStr = match?.[1] || match?.[0];
-            if (jsonStr) content = JSON.parse(jsonStr.trim());
-          } catch (err) {
-            console.warn(
-              "❌ Failed to parse raw_text on page:",
-              page.page_number,
-              err
-            );
-          }
-        }
+  try {
+    const match = content.raw_text.match(
+      /```json\s*([\s\S]+?)\s*```|({[\s\S]+})/
+    );
+    const jsonStr = match?.[1] || match?.[0];
+    if (jsonStr) {
+      const parsed = JSON.parse(jsonStr.trim());
+      content = parsed;
+    }
+  } catch (err) {
+    console.warn(
+      "❌ Failed to parse raw_text on page:",
+      page.page_number,
+      err
+    );
+  }
+}
 
-        // Merge into structured
-        for (const key in content) {
-          const val = content[key];
-          if (Array.isArray(val)) {
-            merged[key] = [...new Set([...(merged[key] || []), ...val])];
-          } else {
-            merged[key] = merged[key] || val;
-          }
-        }
+// ✅ Always merge structured keys, even if raw_text is missing
+for (const key in content) {
+  const val = content[key];
+  if (Array.isArray(val)) {
+    merged[key] = [...new Set([...(merged[key] || []), ...val])];
+  } else if (val && typeof val === "object" && !Array.isArray(val)) {
+    merged[key] = { ...(merged[key] || {}), ...val }; // for nested objects
+  } else {
+    merged[key] = merged[key] || val;
+  }
+}
+
       }
 
       structured = merged;
