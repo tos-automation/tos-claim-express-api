@@ -271,6 +271,24 @@ function isPipClinicMatch(providerName) {
 
 const generateDemandLetterBuffer = require("./utils/generateDemandLetterBuffer");
 
+function normalizeData(structured) {
+  return {
+    "Claimant Name": structured.patient?.name || structured.insured?.name || "",
+    "Provider": structured.header?.provider || structured.provider || structured.provider_name || "",
+    "Claim Number": structured.insured?.policy || structured.claim_number || "",
+    "Insurance Company": structured.insurance_carrier?.name || structured.insurance_company || "",
+    "Bill Amount": structured.financial_summary?.total_charges || structured.bill_amount || 0,
+    "Service Dates": structured.patient?.itemized_statement || structured.service_dates?.join(", ") || "",
+    "Injuries": Array.isArray(structured.current_diagnosis) ? structured.current_diagnosis.join(", ") : "",
+    "Attorney Name": structured.attorney?.name || "",
+    "Attorney Address": structured.attorney?.address || "",
+    "Mail To": structured.mail_to?.name || "",
+    "Mail To Address": structured.mail_to?.address || "",
+    "raw_text": structured.raw_text || JSON.stringify(structured, null, 2)
+  };
+}
+
+
 app.post("/generate-demand-letter", express.json(), async (req, res) => {
   const { documentId, extractedData, mode, forceRetry } = req.body;
 
@@ -336,11 +354,13 @@ app.post("/generate-demand-letter", express.json(), async (req, res) => {
     }
 
     if (mode === "html") {
-  const html = await generateDemandLetterBuffer(structured, { asHtml: true });
+  const normalized = normalizeData(structured);
+  const html = await generateDemandLetterBuffer(normalized, { asHtml: true });
   return res
     .setHeader("Content-Type", "text/html")
-    .send(html); // ✅ Send raw HTML response
+    .send(html); // ✅ Send normalized HTML
 }
+
 
 
     // ❌ DOCX is disabled

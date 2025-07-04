@@ -47,6 +47,28 @@ async function generateDemandLetterBuffer(structuredData = {}, options = {}) {
     bill_amount: `$${(parseFloat(String(billAmount)) || 0).toFixed(2)}`,
   };
 
+  if (!name && structuredData.patient?.name) {
+    replacements.Plaintiff_full_name = structuredData.patient.name;
+  }
+  if (!insuredName && structuredData.insured?.name) {
+    replacements.Defendant_Insurance_Co_insured = structuredData.insured.name;
+  }
+  if (!provider && structuredData.header?.provider) {
+    replacements.Clinic_company_sk = structuredData.header.provider;
+  }
+  if (!claimNumber && structuredData.insured?.policy) {
+    replacements.Defendant_Insurance_Co_claim_number = structuredData.insured.policy;
+  }
+  if (!insuranceCompany && structuredData.insurance_carrier?.name) {
+    replacements.Defendant_Insurance_Co_company_sk = structuredData.insurance_carrier.name;
+  }
+  if (!dos && structuredData.header?.date) {
+    replacements.service_date_range = structuredData.header.date;
+  }
+  if (!billAmount && structuredData.financial_summary?.total_charges) {
+    replacements.bill_amount = `$${parseFloat(structuredData.financial_summary.total_charges).toFixed(2)}`;
+  }
+
   const useTemplate2 = isPipClinicMatch(provider);
 
   if (!options.asHtml) {
