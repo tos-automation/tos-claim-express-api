@@ -133,6 +133,12 @@ async function handleNewUpload({ filePath, fileType, documentId, job }) {
       }
 
       const results = [];
+
+      await supabase
+        .from("documents")
+        .update({ analysis_status: "processing" })
+        .eq("id", documentId);
+
       for (let i = 0; i < base64Images.length; i++) {
         const gptResultRaw = await analyzeImageWithGPT(base64Images[i]);
 
@@ -214,6 +220,11 @@ async function handleReanalyzeImages(data, jobId) {
   const existingImages = await checkIfImagesExist(documentId);
   if (!existingImages || existingImages.length === 0)
     throw new Error("No converted images found.");
+
+  await supabase
+    .from("documents")
+    .update({ analysis_status: "processing" })
+    .eq("id", documentId);
 
   const results = [];
   for (const img of existingImages) {
@@ -343,7 +354,9 @@ function aggregateExtractedData(results) {
     // 🟡 Try to extract structured JSON from raw_text if present
     if (result.raw_text) {
       try {
-        const match = result.raw_text.match(/```json\s*([\s\S]+?)\s*```|({[\s\S]+})/);
+        const match = result.raw_text.match(
+          /```json\s*([\s\S]+?)\s*```|({[\s\S]+})/
+        );
         const jsonStr = match?.[1] || match?.[0];
         if (jsonStr) {
           result = JSON.parse(jsonStr.trim());
@@ -364,4 +377,3 @@ function aggregateExtractedData(results) {
 
   return merged;
 }
-
